@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Compressed Air Leak Detection & Rectification Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+    body { background-color: #020617; color: #f8fafc; }
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 antialiased selection:bg-sky-500/30 selection:text-sky-200">
+
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <span id="statusDot" class="inline-flex h-2.5 w-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+          <h1 class="text-lg sm:text-2xl font-bold tracking-tight text-white">
+            Compressed Air Leak Detection & Rectification
+          </h1>
+        </div>
+        <p class="text-xs sm:text-sm text-slate-400 mt-0.5">
+          Live Utility Audit Dashboard • <span id="syncStatusText">Connecting to database...</span>
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <button id="autoSyncBtn" onclick="toggleAutoRefresh()"
+          class="px-3 py-1.5 rounded-lg text-xs font-medium border bg-emerald-500/10 border-emerald-500/40 text-emerald-300 transition cursor-pointer">
+          Auto-Sync: ON (30s)
+        </button>
+        <button id="refreshBtn" onclick="fetchSheetData(true)"
+          class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs sm:text-sm font-medium transition cursor-pointer disabled:opacity-50">
+          <svg id="refreshIcon" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span id="refreshBtnText">Refresh Now</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Error Banner -->
+    <div id="errorBanner" class="hidden p-4 rounded-xl bg-rose-950/70 border border-rose-500/50 text-rose-200 text-sm flex items-start gap-3">
+      <svg class="w-5 h-5 text-rose-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+      <div>
+        <p class="font-semibold text-rose-300">Database Sync Issue</p>
+        <p id="errorMessage" class="mt-0.5 text-rose-200/90"></p>
+      </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <!-- Open Leaks -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+          <span>Open Leaks</span>
+          <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiOpenCount" class="text-3xl font-bold text-white">--</span>
+          <span id="kpiTotalCount" class="text-xs text-slate-400">/ -- tagged</span>
+        </div>
+        <p id="kpiOverdueCount" class="mt-1 text-xs text-rose-400 font-medium">-- Overdue</p>
+      </div>
+
+      <!-- Rectified % -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+          <span>Rectified</span>
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="kpiRectPct" class="text-3xl font-bold text-emerald-400">--%</span>
+          <span id="kpiFixedCount" class="text-xs text-slate-400">(-- fixed)</span>
+        </div>
+        <div class="w-full bg-slate-800 h-1.5 rounded-full mt-2.5 overflow-hidden">
+          <div id="kpiRectBar" class="bg-emerald-500 h-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- Air Flow Loss -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+          <span>Air Flow Loss</span>
+          <svg class="w-4 h-4 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9.59 4.59A2 2 0 1111 8H2m10.59 11.41A2 2 0 1014 16H2m15.73-8.27A2.5 2.5 0 1119.5 12H2" />
+          </svg>
+        </div>
+        <div class="mt-2 flex items-baseline gap-1.5">
+          <span id="kpiOpenCfm" class="text-3xl font-bold text-white">--</span>
+          <span class="text-sm text-slate-400">CFM</span>
+        </div>
+        <p class="mt-1 text-xs text-slate-400">Active unrectified flow</p>
+      </div>
+
+      <!-- Wasted Power -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+          <span>Wasted Power</span>
+          <svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        </div>
+        <div class="mt-2 flex items-baseline gap-1.5">
+          <span id="kpiOpenKw" class="text-3xl font-bold text-white">--</span>
+          <span class="text-sm text-slate-400">kW</span>
+        </div>
+        <p class="mt-1 text-xs text-slate-400">Continuous compressor load</p>
+      </div>
+
+      <!-- Annual Cost Impact -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between text-slate-400 text-xs font-semibold uppercase tracking-wider">
+          <span>Annual Loss Rate</span>
+          <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <div class="mt-2">
+          <span id="kpiAnnualLoss" class="text-2xl font-bold text-rose-400">PKR --</span>
+          <span class="text-xs text-slate-400">/yr</span>
+        </div>
+        <p id="kpiAnnualSaved" class="mt-1 text-xs text-emerald-400 font-medium">Saved: PKR --/yr</p>
+      </div>
+    </section>
+
+    <!-- Interactive Filter Controls -->
+    <section class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          <svg class="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+          </svg>
+          <span>Live Filter Controls</span>
+        </div>
+        <button onclick="resetFilters()" class="text-xs text-sky-400 hover:text-sky-300 transition cursor-pointer">
+          Reset Filters
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+        <div class="relative lg:col-span-2">
+          <svg class="w-4 h-4 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input id="searchInput" type="text" oninput="applyFilters()"
+            placeholder="Search Tag No, Machine, Remarks..."
+            class="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500" />
+        </div>
+
+        <select id="deptFilter" onchange="onDeptChange()"
+          class="px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500">
+          <option value="ALL">All Departments</option>
+        </select>
+
+        <select id="machineFilter" onchange="applyFilters()"
+          class="px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500">
+          <option value="ALL">All Machines</option>
+        </select>
+
+        <select id="statusFilter" onchange="applyFilters()"
+          class="px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500">
+          <option value="ALL">All Statuses</option>
+          <option value="Open">Open</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Fixed">Fixed</option>
+        </select>
+
+        <div class="flex items-center gap-2">
+          <select id="intensityFilter" onchange="applyFilters()"
+            class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500">
+            <option value="ALL">All Intensities</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+          <button id="overdueBtn" onclick="toggleOverdue()"
+            class="px-3 py-2 rounded-lg text-xs font-semibold border shrink-0 transition cursor-pointer bg-slate-950 border-slate-800 text-slate-400 hover:text-white">
+            Overdue
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Machine Loss Breakdown Bar Chart -->
+    <section id="machineChartSection" class="bg-slate-900 border border-slate-800 rounded-xl p-5 hidden">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 text-sky-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          <h2 class="text-base font-semibold text-white">Top Energy Loss by Machine (Open Leaks)</h2>
+        </div>
+        <span class="text-xs text-slate-400">Sorted by kW Wasted</span>
+      </div>
+      <div id="machineChartBars" class="space-y-3.5"></div>
+    </section>
+
+    <!-- Live Leak Tracker Table -->
+    <section class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h2 class="text-base font-semibold text-white">
+          Live Leak Audit Log (<span id="tableCount">0</span> records)
+        </h2>
+        <span class="text-xs text-slate-400">Live Google Sheets Feed</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse text-xs sm:text-sm">
+          <thead>
+            <tr class="bg-slate-950/80 text-slate-400 border-b border-slate-800 uppercase text-[11px] tracking-wider">
+              <th class="py-3 px-4">Tag No.</th>
+              <th class="py-3 px-4">Department</th>
+              <th class="py-3 px-4">Machine</th>
+              <th class="py-3 px-4">Intensity</th>
+              <th class="py-3 px-4 text-right">CFM</th>
+              <th class="py-3 px-4 text-right">kW</th>
+              <th class="py-3 px-4">Status</th>
+              <th class="py-3 px-4">Target Date</th>
+              <th class="py-3 px-4">Fixed By</th>
+              <th class="py-3 px-4">Remarks</th>
+            </tr>
+          </thead>
+          <tbody id="leakTableBody" class="divide-y divide-slate-800/70">
+            <tr>
+              <td colspan="10" class="py-10 text-center text-slate-400">
+                Loading leak records from Google Sheets...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // Your Apps Script Web App Endpoint
+    const API_URL = "https://script.google.com/macros/s/AKfycbwmu4NpHLeTq3mjSwsxAT6kvyEsTV5P1AlHIoBOJ4Rou-797tf-8OA6KigO_r5ayCjt/exec";
+
+    let rawData = null;
+    let autoRefresh = true;
+    let overdueOnly = false;
+    let refreshTimer = null;
+
+    function formatPKR(val) {
+      if (val >= 1000000) return "PKR " + (val / 1000000).toFixed(2) + "M";
+      if (val >= 1000) return "PKR " + Math.round(val / 1000).toLocaleString() + "K";
+      return "PKR " + Math.round(val).toLocaleString();
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    async function fetchSheetData(isManual = false) {
+      const btn = document.getElementById("refreshBtn");
+      const icon = document.getElementById("refreshIcon");
+      const btnText = document.getElementById("refreshBtnText");
+      const errorBanner = document.getElementById("errorBanner");
+      const statusDot = document.getElementById("statusDot");
+      const syncStatusText = document.getElementById("syncStatusText");
+
+      if (isManual) {
+        btn.disabled = true;
+        icon.classList.add("animate-spin");
+        btnText.textContent = "Syncing...";
+      }
+
+      try {
+        const response = await fetch(API_URL + "?t=" + Date.now(), {
+          method: "GET",
+          redirect: "follow"
+        });
+
+        if (!response.ok) {
+          throw new Error("HTTP Status " + response.status);
+        }
+
+        const json = await response.json();
+
+        if (json.status === "error") {
+          throw new Error(json.message || "Apps Script returned an error.");
+        }
+
+        // Normalize payload whether it comes from doGet() object or raw array
+        rawData = Array.isArray(json)
+          ? { leaks: json, pkrPerKwYear: 283116, lastUpdated: new Date().toISOString() }
+          : json;
+
+        errorBanner.classList.add("hidden");
+        statusDot.className = "inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse";
+        const timeStr = rawData.lastUpdated
+          ? new Date(rawData.lastUpdated).toLocaleTimeString()
+          : new Date().toLocaleTimeString();
+        syncStatusText.textContent = "Live • Last synced at " + timeStr;
+
+        populateDropdowns();
+        applyFilters();
+      } catch (err) {
+        console.error("Fetch Error:", err);
+        statusDot.className = "inline-flex h-2.5 w-2.5 rounded-full bg-rose-500";
+        syncStatusText.textContent = "Sync failed";
+        errorBanner.classList.remove("hidden");
+        document.getElementById("errorMessage").textContent =
+          err.message + " — Verify your Apps Script Web App is deployed with 'Who has access: Anyone' and includes a doGet(e) function.";
+      } finally {
+        btn.disabled = false;
+        icon.classList.remove("animate-spin");
+        btnText.textContent = "Refresh Now";
+      }
+    }
+
+    function populateDropdowns() {
+      if (!rawData || !rawData.leaks) return;
+      const deptSelect = document.getElementById("deptFilter");
+      const machineSelect = document.getElementById("machineFilter");
+
+      const currentDept = deptSelect.value;
+      const currentMachine = machineSelect.value;
+
+      const depts = new Set(rawData.departments || []);
+      const machines = new Set(rawData.machines || []);
+
+      rawData.leaks.forEach(l => {
+        if (l.department) depts.add(l.department);
+        if (l.machine) machines.add(l.machine);
+      });
+
+      deptSelect.innerHTML = '<option value="ALL">All Departments</option>';
+      Array.from(depts).sort().forEach(d => {
+        const opt = document.createElement("option");
+        opt.value = d;
+        opt.textContent = d;
+        deptSelect.appendChild(opt);
+      });
+      if (Array.from(depts).includes(currentDept)) deptSelect.value = currentDept;
+
+      machineSelect.innerHTML = '<option value="ALL">All Machines</option>';
+      Array.from(machines).sort().forEach(m => {
+        if (currentDept !== "ALL") {
+          const belongs = rawData.leaks.some(l => l.department === currentDept && l.machine === m);
+          if (!belongs) return;
+        }
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = m;
+        machineSelect.appendChild(opt);
+      });
+      if (Array.from(machines).includes(currentMachine)) machineSelect.value = currentMachine;
+    }
+
+    function onDeptChange() {
+      document.getElementById("machineFilter").value = "ALL";
+      populateDropdowns();
+      applyFilters();
+    }
+
+    function toggleOverdue() {
+      overdueOnly = !overdueOnly;
+      const btn = document.getElementById("overdueBtn");
+      if (overdueOnly) {
+        btn.className = "px-3 py-2 rounded-lg text-xs font-semibold border shrink-0 transition cursor-pointer bg-rose-500/20 border-rose-500 text-rose-300";
+      } else {
+        btn.className = "px-3 py-2 rounded-lg text-xs font-semibold border shrink-0 transition cursor-pointer bg-slate-950 border-slate-800 text-slate-400 hover:text-white";
+      }
+      applyFilters();
+    }
+
+    function resetFilters() {
+      document.getElementById("searchInput").value = "";
+      document.getElementById("deptFilter").value = "ALL";
+      document.getElementById("machineFilter").value = "ALL";
+      document.getElementById("statusFilter").value = "ALL";
+      document.getElementById("intensityFilter").value = "ALL";
+      if (overdueOnly) toggleOverdue();
+      else {
+        populateDropdowns();
+        applyFilters();
+      }
+    }
+
+    function applyFilters() {
+      if (!rawData || !rawData.leaks) return;
+
+      const q = document.getElementById("searchInput").value.trim().toLowerCase();
+      const dept = document.getElementById("deptFilter").value;
+      const machine = document.getElementById("machineFilter").value;
+      const status = document.getElementById("statusFilter").value.toLowerCase();
+      const intensity = document.getElementById("intensityFilter").value.toLowerCase();
+
+      const filtered = rawData.leaks.filter(l => {
+        if (dept !== "ALL" && l.department !== dept) return false;
+        if (machine !== "ALL" && l.machine !== machine) return false;
+        if (status !== "all" && (l.status || "").toLowerCase() !== status) return false;
+        if (intensity !== "all" && (l.intensity || "").toLowerCase() !== intensity) return false;
+
+        const isFixed = (l.status || "").toLowerCase() === "fixed";
+        const isOverdue = !isFixed && ["yes", "overdue", "true"].includes((l.overdue || "").toLowerCase());
+        if (overdueOnly && !isOverdue) return false;
+
+        if (q) {
+          const hay = [l.tagNo, l.department, l.machine, l.remarks, l.fixedBy, l.status]
+            .join(" ")
+            .toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+
+      renderDashboard(filtered);
+    }
+
+    function renderDashboard(leaks) {
+      const rate = (rawData && rawData.pkrPerKwYear) ? rawData.pkrPerKwYear : 283116;
+
+      let totalCount = leaks.length;
+      let fixedCount = 0;
+      let openCount = 0;
+      let overdueCount = 0;
+      let openCfm = 0;
+      let openKw = 0;
+      let savedKw = 0;
+
+      const machineMap = {};
+
+      leaks.forEach(l => {
+        const cfm = parseFloat(l.cfm) || 0;
+        const kw = parseFloat(l.kwPerM) || 0;
+        const isFixed = (l.status || "").toLowerCase() === "fixed";
+        const isOverdue = !isFixed && ["yes", "overdue", "true"].includes((l.overdue || "").toLowerCase());
+
+        if (isFixed) {
+          fixedCount++;
+          savedKw += kw;
+        } else {
+          openCount++;
+          openCfm += cfm;
+          openKw += kw;
+          if (isOverdue) overdueCount++;
+
+          const mKey = l.machine || "Unassigned";
+          if (!machineMap[mKey]) {
+            machineMap[mKey] = { machine: mKey, dept: l.department || "", count: 0, cfm: 0, kw: 0 };
+          }
+          machineMap[mKey].count++;
+          machineMap[mKey].cfm += cfm;
+          machineMap[mKey].kw += kw;
+        }
+      });
+
+      const rectPct = totalCount > 0 ? Math.round((fixedCount / totalCount) * 100) : 0;
+      const annualLoss = openKw * rate;
+      const annualSaved = savedKw * rate;
+
+      // Update KPI Cards
+      document.getElementById("kpiOpenCount").textContent = openCount.toLocaleString();
+      document.getElementById("kpiTotalCount").textContent = "/ " + totalCount.toLocaleString() + " tagged";
+      document.getElementById("kpiOverdueCount").textContent = overdueCount.toLocaleString() + " Overdue";
+
+      document.getElementById("kpiRectPct").textContent = rectPct + "%";
+      document.getElementById("kpiFixedCount").textContent = "(" + fixedCount.toLocaleString() + " fixed)";
+      document.getElementById("kpiRectBar").style.width = rectPct + "%";
+
+      document.getElementById("kpiOpenCfm").textContent = openCfm.toFixed(1);
+      document.getElementById("kpiOpenKw").textContent = openKw.toFixed(1);
+
+      document.getElementById("kpiAnnualLoss").textContent = formatPKR(annualLoss);
+      document.getElementById("kpiAnnualSaved").textContent = "Saved: " + formatPKR(annualSaved) + "/yr";
+
+      // Update Machine Chart
+      const topMachines = Object.values(machineMap).sort((a, b) => b.kw - a.kw).slice(0, 8);
+      const chartSection = document.getElementById("machineChartSection");
+      const chartBars = document.getElementById("machineChartBars");
+
+      if (topMachines.length > 0) {
+        chartSection.classList.remove("hidden");
+        const maxKw = Math.max(...topMachines.map(m => m.kw), 0.1);
+        chartBars.innerHTML = topMachines.map(m => {
+          const pct = Math.max((m.kw / maxKw) * 100, 3);
+          const pkr = formatPKR(m.kw * rate);
+          return `
+            <div class="space-y-1">
+              <div class="flex flex-wrap justify-between text-xs sm:text-sm gap-1">
+                <span class="font-medium text-slate-200">
+                  ${escapeHtml(m.machine)} <span class="text-slate-500 text-xs">(${escapeHtml(m.dept)})</span>
+                </span>
+                <span class="text-slate-300 font-mono text-xs sm:text-sm">
+                  ${m.count} leaks • ${m.cfm.toFixed(1)} CFM • <strong class="text-amber-400">${m.kw.toFixed(1)} kW</strong> (${pkr}/yr)
+                </span>
+              </div>
+              <div class="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800">
+                <div class="bg-gradient-to-r from-sky-500 to-amber-400 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+              </div>
+            </div>
+          `;
+        }).join("");
+      } else {
+        chartSection.classList.add("hidden");
+      }
+
+      // Update Table
+      document.getElementById("tableCount").textContent = leaks.length.toLocaleString();
+      const tbody = document.getElementById("leakTableBody");
+
+      if (leaks.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="10" class="py-10 text-center text-slate-400">
+              No leak records match the current filters.
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = leaks.map(l => {
+        const isFixed = (l.status || "").toLowerCase() === "fixed";
+        const isOverdue = !isFixed && ["yes", "overdue", "true"].includes((l.overdue || "").toLowerCase());
+        const intensityLower = (l.intensity || "").toLowerCase();
+
+        let intensityBadge = "bg-slate-800 text-slate-300";
+        if (intensityLower === "high") intensityBadge = "bg-rose-500/20 text-rose-300 border border-rose-500/30";
+        else if (intensityLower === "medium") intensityBadge = "bg-amber-500/20 text-amber-300 border border-amber-500/30";
+
+        let statusBadge = "bg-sky-500/15 text-sky-300 border border-sky-500/30";
+        let statusLabel = l.status || "Open";
+        if (isFixed) {
+          statusBadge = "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
+          statusLabel = "Fixed";
+        } else if (isOverdue) {
+          statusBadge = "bg-rose-500/15 text-rose-300 border border-rose-500/30";
+          statusLabel = "Overdue";
+        }
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-3 px-4 font-mono font-semibold text-sky-400 whitespace-nowrap">${escapeHtml(l.tagNo || "-")}</td>
+            <td class="py-3 px-4 text-slate-300 whitespace-nowrap">${escapeHtml(l.department || "-")}</td>
+            <td class="py-3 px-4 font-medium text-white whitespace-nowrap">${escapeHtml(l.machine || "-")}</td>
+            <td class="py-3 px-4 whitespace-nowrap">
+              <span class="px-2 py-0.5 rounded text-xs font-semibold ${intensityBadge}">${escapeHtml(l.intensity || "N/A")}</span>
+            </td>
+            <td class="py-3 px-4 text-right font-mono text-slate-200">${(parseFloat(l.cfm) || 0).toFixed(1)}</td>
+            <td class="py-3 px-4 text-right font-mono text-amber-300">${(parseFloat(l.kwPerM) || 0).toFixed(2)}</td>
+            <td class="py-3 px-4 whitespace-nowrap">
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadge}">${escapeHtml(statusLabel)}</span>
+            </td>
+            <td class="py-3 px-4 text-slate-400 whitespace-nowrap">${escapeHtml(l.targetDate || "-")}</td>
+            <td class="py-3 px-4 text-slate-300 whitespace-nowrap">${escapeHtml(l.fixedBy || "-")}</td>
+            <td class="py-3 px-4 text-slate-400 max-w-xs truncate" title="${escapeHtml(l.remarks || "")}">${escapeHtml(l.remarks || "-")}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function toggleAutoRefresh() {
+      autoRefresh = !autoRefresh;
+      const btn = document.getElementById("autoSyncBtn");
+      if (autoRefresh) {
+        btn.textContent = "Auto-Sync: ON (30s)";
+        btn.className = "px-3 py-1.5 rounded-lg text-xs font-medium border bg-emerald-500/10 border-emerald-500/40 text-emerald-300 transition cursor-pointer";
+        startTimer();
+      } else {
+        btn.textContent = "Auto-Sync: OFF";
+        btn.className = "px-3 py-1.5 rounded-lg text-xs font-medium border bg-slate-800 border-slate-700 text-slate-400 transition cursor-pointer";
+        clearInterval(refreshTimer);
+      }
+    }
+
+    function startTimer() {
+      clearInterval(refreshTimer);
+      refreshTimer = setInterval(() => {
+        if (autoRefresh) fetchSheetData(false);
+      }, 30000);
+    }
+
+    // Boot
+    fetchSheetData(false);
+    startTimer();
+  </script>
+  <!-- =========================================================================
+     SLEEK EXECUTIVE SUMMARY, LIVE UNIT RATE & m³/min ADD-ON
+     Paste directly before </body> — zero edits to Apps Script or existing HTML.
+     ========================================================================= -->
+<script>
+(function initExecutiveLeakAddon() {
+  const CFM_TO_M3 = 35.3146667;
+  const HOURS_PER_YEAR = 8640;
+  let liveUnitRate = 33;
+
+  function getM3(leak) {
+    const m3 = parseFloat(leak.m3PerMin);
+    if (!isNaN(m3) && m3 > 0) return m3;
+    const cfm = parseFloat(leak.cfm);
+    return !isNaN(cfm) && cfm > 0 ? cfm / CFM_TO_M3 : 0;
+  }
+
+  // 1. Live Editable "Rate (PKR/kWh)" Control in Header
+  const refreshBtn = document.getElementById("refreshBtn");
+  if (refreshBtn && refreshBtn.parentElement && !document.getElementById("liveRateBox")) {
+    const rateWrap = document.createElement("div");
+    rateWrap.id = "liveRateBox";
+    rateWrap.className = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0b1220] border border-slate-700/80 focus-within:border-sky-400 transition";
+    rateWrap.innerHTML = `
+      <label for="unitRateInput" class="text-[11px] font-semibold uppercase tracking-wider text-slate-400 select-none">Rate:</label>
+      <input id="unitRateInput" type="number" step="any" min="0" value="33"
+        aria-label="Electricity Rate in PKR per kWh"
+        class="w-14 bg-transparent text-sm font-mono font-bold text-amber-300 focus:outline-none text-right" />
+      <span class="text-[11px] text-slate-400 font-mono select-none">PKR/kWh</span>
+    `;
+    refreshBtn.parentElement.insertBefore(rateWrap, refreshBtn.parentElement.firstChild);
+
+    const rateInput = document.getElementById("unitRateInput");
+    rateInput.addEventListener("input", function () {
+      const raw = String(this.value).trim();
+      const parsed = parseFloat(raw);
+      liveUnitRate = raw === "" || isNaN(parsed) || parsed < 0 ? 0 : parsed;
+      if (typeof window.applyFilters === "function") window.applyFilters();
+    });
+  }
+
+  // 2. Replace "CFM" table header with "m³/min"
+  document.querySelectorAll("table thead th").forEach(th => {
+    if (th.textContent.trim().toUpperCase() === "CFM") th.textContent = "m³/min";
+  });
+
+  // 3. Replace "CFM" unit label on Air Flow Loss KPI card with "m³/min"
+  const openCfmEl = document.getElementById("kpiOpenCfm");
+  if (openCfmEl && openCfmEl.nextElementSibling) {
+    openCfmEl.nextElementSibling.textContent = "m³/min";
+  }
+
+  // 4. Sleek 3-Pillar Executive Summary Bar above KPI Cards
+  const mainEl = document.querySelector("main");
+  const kpiSection = mainEl ? mainEl.querySelector("section.grid") : null;
+
+  if (mainEl && kpiSection && !document.getElementById("execSummaryStrip")) {
+    const strip = document.createElement("section");
+    strip.id = "execSummaryStrip";
+    strip.className = "bg-[#0d1526] border border-slate-800/90 rounded-2xl px-5 py-4 shadow-lg";
+    strip.innerHTML = `
+      <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-slate-800/80">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+          <span class="text-xs font-bold uppercase tracking-widest text-slate-200">
+            Executive Overview — <span id="execScopeLabel" class="text-sky-400">All Departments</span>
+          </span>
+        </div>
+        <span id="execFormulaNote" class="text-xs font-mono text-slate-400">
+          PKR 33/kWh • 8,640 hrs/yr
+        </span>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 divide-y lg:divide-y-0 lg:divide-x divide-slate-800/80">
+        <!-- Pillar 1: Leak Rectification -->
+        <div class="pt-2 lg:pt-0 lg:pr-4 flex flex-col justify-between gap-2">
+          <div class="flex items-baseline justify-between">
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Rectification Progress</span>
+            <span id="exPctFixed" class="text-sm font-bold text-emerald-400">--%</span>
+          </div>
+          <div class="flex items-baseline justify-between gap-2">
+            <div class="text-xl font-bold text-white font-mono">
+              <span id="exFixedLeaks">--</span> <span class="text-xs font-normal text-slate-400">/ <span id="exTotalLeaks">--</span> fixed</span>
+            </div>
+            <div class="text-xs text-slate-300 font-mono">
+              <span id="exOpenLeaks" class="text-amber-400 font-semibold">--</span> open • <span id="exOverdueLeaks" class="text-rose-400 font-semibold">--</span> overdue
+            </div>
+          </div>
+          <div class="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden">
+            <div id="exRectBar" class="bg-emerald-400 h-full rounded-full transition-all duration-300" style="width:0%"></div>
+          </div>
+        </div>
+
+        <!-- Pillar 2: Flow & Power Baseline vs. Active -->
+        <div class="pt-3 lg:pt-0 lg:px-4 flex flex-col justify-between gap-1.5">
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Flow & Power (Active vs. Initial)</span>
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-xs text-slate-400">Air Flow</span>
+            <span class="text-sm font-mono font-bold text-sky-400 whitespace-nowrap">
+              <span id="exOpenM3">--</span> <span class="text-xs text-slate-400 font-normal">/ <span id="exInitM3">--</span> m³/min</span>
+            </span>
+          </div>
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-xs text-slate-400">Compressor Load</span>
+            <span class="text-sm font-mono font-bold text-amber-300 whitespace-nowrap">
+              <span id="exOpenKw">--</span> <span class="text-xs text-slate-400 font-normal">/ <span id="exInitKw">--</span> kW</span>
+              <span class="text-emerald-400 text-xs ml-1">(<span id="exSavedKw">--</span> saved)</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Pillar 3: Financial Baseline vs. Saved & Active Loss -->
+        <div class="pt-3 lg:pt-0 lg:pl-4 flex flex-col justify-between gap-1.5">
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Financial Impact (PKR / Year)</span>
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-xs text-slate-400">Initial Baseline</span>
+            <span id="exInitCostYr" class="text-sm font-mono font-semibold text-slate-200 whitespace-nowrap">--</span>
+          </div>
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-xs text-slate-400">Realized Savings</span>
+            <span id="exSavedCostYr" class="text-sm font-mono font-bold text-emerald-400 whitespace-nowrap">--</span>
+          </div>
+          <div class="flex items-baseline justify-between gap-2">
+            <span class="text-xs text-slate-400">Still Losing</span>
+            <span id="exOpenCostYr" class="text-sm font-mono font-bold text-rose-400 whitespace-nowrap">--</span>
+          </div>
+        </div>
+      </div>
+    `;
+    mainEl.insertBefore(strip, kpiSection);
+  }
+
+  // 5. Override applyFilters: KPIs & Overview scope to Dept/Machine only; table filters apply to table
+  window.applyFilters = function () {
+    if (!rawData || !rawData.leaks) return;
+
+    const q = document.getElementById("searchInput").value.trim().toLowerCase();
+    const dept = document.getElementById("deptFilter").value;
+    const machine = document.getElementById("machineFilter").value;
+    const status = document.getElementById("statusFilter").value.toLowerCase();
+    const intensity = document.getElementById("intensityFilter").value.toLowerCase();
+
+    const scopedLeaks = rawData.leaks.filter(l => {
+      if (dept !== "ALL" && l.department !== dept) return false;
+      if (machine !== "ALL" && l.machine !== machine) return false;
+      return true;
+    });
+
+    const tableLeaks = scopedLeaks.filter(l => {
+      if (status !== "all" && (l.status || "").toLowerCase() !== status) return false;
+      if (intensity !== "all" && (l.intensity || "").toLowerCase() !== intensity) return false;
+
+      const isFixed = (l.status || "").toLowerCase() === "fixed";
+      const isOverdue = !isFixed && ["yes", "overdue", "true"].includes((l.overdue || "").toLowerCase());
+      if (overdueOnly && !isOverdue) return false;
+
+      if (q) {
+        const hay = [l.tagNo, l.department, l.machine, l.remarks, l.fixedBy, l.status]
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    renderExecutiveAndTable(scopedLeaks, tableLeaks, dept, machine);
+  };
+
+  function renderExecutiveAndTable(scopedLeaks, tableLeaks, dept, machine) {
+    const pkrPerKwYear = liveUnitRate * HOURS_PER_YEAR;
+
+    const formulaNote = document.getElementById("execFormulaNote");
+    if (formulaNote) {
+      formulaNote.textContent = `PKR ${liveUnitRate}/kWh • ${HOURS_PER_YEAR.toLocaleString()} hrs/yr`;
+    }
+
+    const scopeLabel = document.getElementById("execScopeLabel");
+    if (scopeLabel) {
+      scopeLabel.textContent = machine !== "ALL"
+        ? `${dept !== "ALL" ? dept + " → " : ""}${machine}`
+        : (dept !== "ALL" ? dept : "All Departments");
+    }
+
+    let totalCount = scopedLeaks.length;
+    let fixedCount = 0;
+    let unrectifiedCount = 0;
+    let overdueCount = 0;
+
+    let initM3 = 0, openM3 = 0, savedM3 = 0;
+    let initKw = 0, openKw = 0, savedKw = 0;
+    const machineMap = {};
+
+    scopedLeaks.forEach(l => {
+      const m3 = getM3(l);
+      const kw = parseFloat(l.kwPerM) || 0;
+      const isFixed = (l.status || "").toLowerCase() === "fixed";
+      const isOverdue = !isFixed && ["yes", "overdue", "true"].includes((l.overdue || "").toLowerCase());
+
+      initM3 += m3;
+      initKw += kw;
+
+      if (isFixed) {
+        fixedCount++;
+        savedM3 += m3;
+        savedKw += kw;
+      } else {
+        unrectifiedCount++;
+        openM3 += m3;
+        openKw += kw;
+        if (isOverdue) overdueCount++;
+
+        const mKey = l.machine || "Unassigned";
+        if (!machineMap[mKey]) {
+          machineMap[mKey] = { machine: mKey, dept: l.department || "", count: 0, m3: 0, kw: 0 };
+        }
+        machineMap[mKey].count++;
+        machineMap[mKey].m3 += m3;
+        machineMap[mKey].kw += kw;
+      }
+    });
+
+    const rectPct = totalCount > 0 ? Math.round((fixedCount / totalCount) * 100) : 0;
+    const initAnnualCost = initKw * pkrPerKwYear;
+    const savedAnnualCost = savedKw * pkrPerKwYear;
+    const stillLosingAnnualCost = openKw * pkrPerKwYear;
+
+    const setText = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    };
+
+    // Executive Strip
+    setText("exTotalLeaks", totalCount.toLocaleString());
+    setText("exFixedLeaks", fixedCount.toLocaleString());
+    setText("exOpenLeaks", unrectifiedCount.toLocaleString());
+    setText("exOverdueLeaks", overdueCount.toLocaleString());
+    setText("exPctFixed", rectPct + "%");
+    const exBar = document.getElementById("exRectBar");
+    if (exBar) exBar.style.width = rectPct + "%";
+
+    setText("exInitM3", initM3.toFixed(2));
+    setText("exOpenM3", openM3.toFixed(2));
+    setText("exInitKw", initKw.toFixed(1));
+    setText("exOpenKw", openKw.toFixed(1));
+    setText("exSavedKw", savedKw.toFixed(1));
+
+    setText("exInitCostYr", formatPKR(initAnnualCost) + "/yr");
+    setText("exSavedCostYr", formatPKR(savedAnnualCost) + "/yr");
+    setText("exOpenCostYr", formatPKR(stillLosingAnnualCost) + "/yr");
+
+    // 5 KPI Cards
+    setText("kpiOpenCount", unrectifiedCount.toLocaleString());
+    setText("kpiTotalCount", "/ " + totalCount.toLocaleString() + " tagged");
+    setText("kpiOverdueCount", overdueCount.toLocaleString() + " Overdue");
+
+    setText("kpiRectPct", rectPct + "%");
+    setText("kpiFixedCount", "(" + fixedCount.toLocaleString() + " fixed)");
+    const rectBar = document.getElementById("kpiRectBar");
+    if (rectBar) rectBar.style.width = rectPct + "%";
+
+    setText("kpiOpenCfm", openM3.toFixed(2));
+    const flowSub = openCfmEl && openCfmEl.parentElement ? openCfmEl.parentElement.nextElementSibling : null;
+    if (flowSub) {
+      flowSub.innerHTML = `of <strong class="text-slate-200">${initM3.toFixed(2)}</strong> initial • <span class="text-emerald-400">-${savedM3.toFixed(2)} saved</span>`;
+    }
+
+    const openKwEl = document.getElementById("kpiOpenKw");
+    if (openKwEl) {
+      openKwEl.textContent = openKw.toFixed(1);
+      const kwSub = openKwEl.parentElement ? openKwEl.parentElement.nextElementSibling : null;
+      if (kwSub) {
+        kwSub.innerHTML = `of <strong class="text-slate-200">${initKw.toFixed(1)} kW</strong> initial • <span class="text-emerald-400">-${savedKw.toFixed(1)} kW saved</span>`;
+      }
+    }
+
+    setText("kpiAnnualLoss", formatPKR(stillLosingAnnualCost));
+    const savedEl = document.getElementById("kpiAnnualSaved");
+    if (savedEl) {
+      savedEl.innerHTML = `Initial: ${formatPKR(initAnnualCost)}/yr • <span class="text-emerald-400">Saved: ${formatPKR(savedAnnualCost)}/yr</span>`;
+    }
+
+    // Machine Loss Bar Chart in m³/min
+    const topMachines = Object.values(machineMap).sort((a, b) => b.kw - a.kw).slice(0, 8);
+    const chartSection = document.getElementById("machineChartSection");
+    const chartBars = document.getElementById("machineChartBars");
+
+    if (topMachines.length > 0) {
+      chartSection.classList.remove("hidden");
+      const maxKw = Math.max(...topMachines.map(m => m.kw), 0.1);
+      chartBars.innerHTML = topMachines.map(m => {
+        const pct = Math.max((m.kw / maxKw) * 100, 3);
+        const pkr = formatPKR(m.kw * pkrPerKwYear);
+        return `
+          <div class="space-y-1">
+            <div class="flex flex-wrap justify-between text-xs sm:text-sm gap-1">
+              <span class="font-medium text-slate-200">
+                ${escapeHtml(m.machine)} <span class="text-slate-500 text-xs">(${escapeHtml(m.dept)})</span>
+              </span>
+              <span class="text-slate-300 font-mono text-xs sm:text-sm">
+                ${m.count} leaks • ${m.m3.toFixed(2)} m³/min • <strong class="text-amber-400">${m.kw.toFixed(1)} kW</strong> (${pkr}/yr)
+              </span>
+            </div>
+            <div class="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800">
+              <div class="bg-gradient-to-r from-sky-500 to-amber-400 h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    } else {
+      chartSection.classList.add("hidden");
+    }
+
+    // Audit Log Table in m³/min
+    setText("tableCount", tableLeaks.length.toLocaleString());
+    const tbody = document.getElementById("leakTableBody");
+
+    if (tableLeaks.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="10" class="py-10 text-center text-slate-400">No leak records match the current filters.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = tableLeaks.map(l => {
+      const isFixed = (l.status || "").toLowerCase() === "fixed";
+      const isOverdue = !isFixed && ["yes", "overdue", "true"].includes((l.overdue || "").toLowerCase());
+      const intensityLower = (l.intensity || "").toLowerCase();
+
+      let intensityBadge = "bg-slate-800 text-slate-300";
+      if (intensityLower === "high") intensityBadge = "bg-rose-500/20 text-rose-300 border border-rose-500/30";
+      else if (intensityLower === "medium") intensityBadge = "bg-amber-500/20 text-amber-300 border border-amber-500/30";
+
+      let statusBadge = "bg-sky-500/15 text-sky-300 border border-sky-500/30";
+      let statusLabel = l.status || "Open";
+      if (isFixed) {
+        statusBadge = "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
+        statusLabel = "Fixed";
+      } else if (isOverdue) {
+        statusBadge = "bg-rose-500/15 text-rose-300 border border-rose-500/30";
+        statusLabel = "Overdue";
+      }
+
+      return `
+        <tr class="hover:bg-slate-800/40 transition">
+          <td class="py-3 px-4 font-mono font-semibold text-sky-400 whitespace-nowrap">${escapeHtml(l.tagNo || "-")}</td>
+          <td class="py-3 px-4 text-slate-300 whitespace-nowrap">${escapeHtml(l.department || "-")}</td>
+          <td class="py-3 px-4 font-medium text-white whitespace-nowrap">${escapeHtml(l.machine || "-")}</td>
+          <td class="py-3 px-4 whitespace-nowrap"><span class="px-2 py-0.5 rounded text-xs font-semibold ${intensityBadge}">${escapeHtml(l.intensity || "N/A")}</span></td>
+          <td class="py-3 px-4 text-right font-mono text-slate-200">${getM3(l).toFixed(2)}</td>
+          <td class="py-3 px-4 text-right font-mono text-amber-300">${(parseFloat(l.kwPerM) || 0).toFixed(2)}</td>
+          <td class="py-3 px-4 whitespace-nowrap"><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusBadge}">${escapeHtml(statusLabel)}</span></td>
+          <td class="py-3 px-4 text-slate-400 whitespace-nowrap">${escapeHtml(l.targetDate || "-")}</td>
+          <td class="py-3 px-4 text-slate-300 whitespace-nowrap">${escapeHtml(l.fixedBy || "-")}</td>
+          <td class="py-3 px-4 text-slate-400 max-w-xs truncate" title="${escapeHtml(l.remarks || "")}">${escapeHtml(l.remarks || "-")}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+
+  if (typeof rawData !== "undefined" && rawData && rawData.leaks) {
+    window.applyFilters();
+  }
+})();
+</script>
+</body>
+</html>
